@@ -1231,7 +1231,7 @@
 	},
 	"settings": {
 		"compilationTarget": {
-			"contract-d7e860d957.sol": "MyToken"
+			"token-contract.sol": "MyToken"
 		},
 		"evmVersion": "cancun",
 		"libraries": {},
@@ -1479,7 +1479,7 @@
 				"dweb:/ipfs/QmcqQo9mmD5kekxFtJcvZTyCPaEgxQsSVfp7wLiE91fdAc"
 			]
 		},
-		"contract-d7e860d957.sol": {
+		"token-contract.sol": {
 			"keccak256": "0x278964b9e5ffb8552899f6396d84d033edc1416824ed5df8b88c67abd8e680c3",
 			"license": "MIT",
 			"urls": [
