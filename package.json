@@ -1,0 +1,41 @@
+{
+  "name": "fortuna-contracts",
+  "version": "1.0.0",
+  "description": "Fortuna is a utility-focused blockchain ecosystem designed to support rewards, staking, governance, AI-powered services, and long-term community participation.",
+  "main": "index.js",
+  "scripts": {
+    "test": "hardhat test",
+    "clean": "rm -rf hh-artifacts hh-cache",
+    "compile": "hardhat compile",
+    "node": "hardhat node",
+    "deploy:vesting": "hardhat run scripts/deploy/deploy-vesting.js",
+    "deploy:token": "hardhat run scripts/deploy/deploy-token.js",
+    "verify:vesting": "hardhat verify-vesting",
+    "node:local": "hardhat node --hostname 127.0.0.1 --port 8545",
+    "local:wallets": "hardhat run scripts/local/create-funded-wallets.js --network localhost",
+    "local:test": "hardhat test --network localhost",
+    "local:deploy:token": "hardhat run scripts/deploy/deploy-token.js --network localhost",
+    "local:deploy:vesting": "hardhat run scripts/deploy/deploy-vesting.js --network localhost",
+    "verify:token": "hardhat verify-token"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/praba-alt/fortuna-smart-contracts.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/praba-alt/fortuna-smart-contracts/issues"
+  },
+  "homepage": "https://github.com/praba-alt/fortuna-smart-contracts#readme",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "dotenv": "^17.4.2",
+    "hardhat": "^2.28.6"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.6.0"
+  }
+}

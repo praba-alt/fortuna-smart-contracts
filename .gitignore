@@ -3,7 +3,9 @@
 .states/
 artifacts/
 
-# ── Build outputs ─────────────────────────────────────────
+# ── Hardhat outputs ──────────────────────────────────────
+hh-artifacts/
+hh-cache/
 cache/
 out/
 
@@ -13,6 +15,8 @@ node_modules/
 # ── Environment & secrets ─────────────────────────────────
 .env
 .env.*
+!.env.example
+.local/
 *.pem
 *.key
 
