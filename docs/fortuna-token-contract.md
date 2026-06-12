@@ -16,7 +16,8 @@ Contract:
 
 - ERC20 standard
 - Burnable
-- Mintable (owner controlled)
+- Mintable with dedicated `minter` role
+- Hard cap on post-genesis minting (`100,000,000` tokens)
 - Permit (EIP-2612)
 - Votes / governance-ready
 - OpenZeppelin security standards
@@ -26,13 +27,21 @@ Contract:
 - Name: `FortunaToken`
 - Symbol: `FORT`
 - Initial Supply: `1,000,000,000` tokens
-- Mint extension target (staking layer): up to `100,000,000` additional tokens (planning context; governance/policy controlled)
+- Max Mint Extension: `100,000,000` tokens (enforced on-chain via `MAX_MINT_EXTENSION`)
+- Default minter: `TOKEN_INITIAL_OWNER` at deployment
+
+## Access Control
+
+- `owner`: can reassign `minter` via `setMinter(address)`
+- Ownership transfer uses `Ownable2Step` (`transferOwnership` + `acceptOwnership`)
+- `minter`: only address that can call `mint(address,uint256)`
+- `mint`: tracks `mintedExtension` and reverts if mint extension would exceed `MAX_MINT_EXTENSION`
 
 ## Constructor Parameters
 
 `FortunaToken` constructor:
 - `recipient` (`address`): receives initial supply
-- `initialOwner` (`address`): contract owner with mint permissions
+- `initialOwner` (`address`): contract owner and initial minter
 
 `.env` variables used by deploy/verify flow:
 - `TOKEN_RECIPIENT`
@@ -127,7 +136,7 @@ scripts/
 
 test/
 ├── vesting/
-└── token/                      (planned)
+└── token/
 
 docs/
 ```
