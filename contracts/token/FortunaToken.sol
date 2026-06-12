@@ -19,9 +19,12 @@ contract FortunaToken is ERC20, ERC20Burnable, Ownable2Step, ERC20Permit, ERC20V
 
     error UnauthorizedMinter(address caller);
     error InvalidMinter(address newMinter);
+    error InvalidRecipient(address recipient);
+    error InvalidInitialOwner(address initialOwner);
     error MintCapExceeded(uint256 requestedTotalMintedExtension, uint256 maxMintExtension);
 
     event MinterUpdated(address indexed previousMinter, address indexed newMinter);
+    event TokensMinted(address indexed to, uint256 amount, uint256 totalMintedExtension);
 
     modifier onlyMinter() {
         if (msg.sender != minter) {
@@ -32,11 +35,23 @@ contract FortunaToken is ERC20, ERC20Burnable, Ownable2Step, ERC20Permit, ERC20V
 
     constructor(address recipient, address initialOwner)
         ERC20("Fortuna Token", "FORT")
-        Ownable(initialOwner)
+        Ownable(_validateInitialOwner(initialOwner))
         ERC20Permit("Fortuna Token")
     {
+        if (recipient == address(0)) {
+            revert InvalidRecipient(recipient);
+        }
+
         minter = initialOwner;
         _mint(recipient, INITIAL_SUPPLY);
+    }
+
+    function _validateInitialOwner(address owner) private pure returns (address) {
+        if (owner == address(0)) {
+            revert InvalidInitialOwner(owner);
+        }
+
+        return owner;
     }
 
     function setMinter(address newMinter) external onlyOwner {
@@ -58,6 +73,15 @@ contract FortunaToken is ERC20, ERC20Burnable, Ownable2Step, ERC20Permit, ERC20V
 
         mintedExtension = updatedMintedExtension;
         _mint(to, amount);
+        emit TokensMinted(to, amount, updatedMintedExtension);
+    }
+
+    function maxSupply() external pure returns (uint256) {
+        return INITIAL_SUPPLY + MAX_MINT_EXTENSION;
+    }
+
+    function remainingMintAllowance() external view returns (uint256) {
+        return MAX_MINT_EXTENSION - mintedExtension;
     }
 
     // The following functions are overrides required by Solidity.
