@@ -28,3 +28,6 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# ── Generated run reports ──────────────────────────────────
+run-reports/

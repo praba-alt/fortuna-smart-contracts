@@ -16,7 +16,11 @@
     "local:test": "hardhat test --network localhost",
     "local:deploy:token": "hardhat run scripts/deploy/deploy-token.js --network localhost",
     "local:deploy:vesting": "hardhat run scripts/deploy/deploy-vesting.js --network localhost",
-    "verify:token": "hardhat verify-token"
+    "verify:token": "hardhat verify-token",
+    "smoke:token:base-sepolia": "hardhat run scripts/smoke/smoke-token.js --network baseSepolia",
+    "smoke:vesting:base-sepolia": "hardhat run scripts/smoke/smoke-vesting.js --network baseSepolia",
+    "deploy:smoke:local": "hardhat run scripts/smoke/deploy-and-smoke.js",
+    "deploy:smoke:base-sepolia": "hardhat run scripts/smoke/deploy-and-smoke.js --network baseSepolia"
   },
   "repository": {
     "type": "git",

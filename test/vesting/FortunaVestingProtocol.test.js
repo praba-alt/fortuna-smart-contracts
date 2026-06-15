@@ -7,8 +7,8 @@ describe("FortunaVestingProtocol", function () {
     const [owner, creator, creator2, beneficiary, beneficiary2, treasury, other] =
       await ethers.getSigners();
 
-    const TestToken = await ethers.getContractFactory("TestToken");
-    const token = await TestToken.connect(owner).deploy();
+    const FortunaToken = await ethers.getContractFactory("FortunaToken");
+    const token = await FortunaToken.connect(owner).deploy(owner.address, owner.address);
     await token.waitForDeployment();
 
     await token.connect(owner).transfer(creator.address, ethers.parseEther("400"));
@@ -40,6 +40,25 @@ describe("FortunaVestingProtocol", function () {
     };
   }
 
+  async function deployFeeOnTransferFixture() {
+    const [owner, creator, beneficiary, treasury] = await ethers.getSigners();
+
+    const FeeOnTransferToken = await ethers.getContractFactory("FeeOnTransferToken");
+    const feeToken = await FeeOnTransferToken.connect(owner).deploy(1000); // 10%
+    await feeToken.waitForDeployment();
+    await feeToken.connect(owner).transfer(creator.address, ethers.parseEther("200"));
+
+    const Protocol = await ethers.getContractFactory("FortunaVestingProtocol");
+    const protocol = await Protocol.connect(owner).deploy(
+      treasury.address,
+      0,
+      0
+    );
+    await protocol.waitForDeployment();
+
+    return { owner, creator, beneficiary, treasury, feeToken, protocol };
+  }
+
   async function createSchedule(ctx, overrides = {}) {
     const creator = overrides.creator ?? ctx.creator;
     const beneficiary = overrides.beneficiary ?? ctx.beneficiary;
@@ -53,11 +72,13 @@ describe("FortunaVestingProtocol", function () {
     const revocable = overrides.revocable ?? true;
     const title = overrides.title ?? "Team Allocation";
     const category = overrides.category ?? "TEAM";
-    const value = overrides.value ?? ctx.flatFeeNative;
+    const payFeeInFortuna = overrides.payFeeInFortuna ?? false;
+    const value = overrides.value ?? (payFeeInFortuna ? 0n : ctx.flatFeeNative);
+    const approveAmount = overrides.approveAmount ?? amount;
 
-    await token.connect(creator).approve(await ctx.protocol.getAddress(), amount);
+    await token.connect(creator).approve(await ctx.protocol.getAddress(), approveAmount);
 
-    await ctx.protocol.connect(creator).createSchedule(
+    const args = [
       await token.getAddress(),
       beneficiary.address ?? beneficiary,
       amount,
@@ -69,8 +90,13 @@ describe("FortunaVestingProtocol", function () {
       revocable,
       title,
       category,
-      { value }
-    );
+    ];
+
+    if (payFeeInFortuna) {
+      await ctx.protocol.connect(creator).createScheduleWithFortunaFee(...args, { value });
+    } else {
+      await ctx.protocol.connect(creator).createSchedule(...args, { value });
+    }
 
     const ids = await ctx.protocol.getSchedulesByBeneficiary(beneficiary.address ?? beneficiary);
     return ids[ids.length - 1];
@@ -85,6 +111,9 @@ describe("FortunaVestingProtocol", function () {
       expect(await protocol.treasuryWallet()).to.equal(treasury.address);
       expect(await protocol.flatFeeNative()).to.equal(flatFeeNative);
       expect(await protocol.tokenFeeBps()).to.equal(tokenFeeBps);
+      expect(await protocol.fortunaFeeToken()).to.equal(ethers.ZeroAddress);
+      expect(await protocol.flatFeeFortuna()).to.equal(0);
+      expect(await protocol.fortunaFeeDiscountBps()).to.equal(0);
       expect(await protocol.totalSchedules()).to.equal(0);
     });
 
@@ -110,6 +139,9 @@ describe("FortunaVestingProtocol", function () {
       await expect(protocol.connect(other).setTokenFeeBps(1))
         .to.be.revertedWithCustomError(protocol, "OwnableUnauthorizedAccount")
         .withArgs(other.address);
+      await expect(protocol.connect(other).setFortunaFeeConfig(other.address, 1, 0))
+        .to.be.revertedWithCustomError(protocol, "OwnableUnauthorizedAccount")
+        .withArgs(other.address);
       await expect(protocol.connect(other).setTreasuryWallet(other.address))
         .to.be.revertedWithCustomError(protocol, "OwnableUnauthorizedAccount")
         .withArgs(other.address);
@@ -129,6 +161,12 @@ describe("FortunaVestingProtocol", function () {
       await expect(protocol.connect(owner).setTokenFeeBps(1001)).to.be.revertedWith(
         "Fortuna: fee too high"
       );
+      await expect(protocol.connect(owner).setFortunaFeeConfig(other.address, 1, 10001)).to.be.revertedWith(
+        "Fortuna: invalid discount"
+      );
+      await expect(protocol.connect(owner).setFortunaFeeConfig(ethers.ZeroAddress, 1, 0)).to.be.revertedWith(
+        "Fortuna: fee token not set"
+      );
       await expect(protocol.connect(owner).setTreasuryWallet(ethers.ZeroAddress)).to.be.revertedWith(
         "Fortuna: zero treasury"
       );
@@ -139,6 +177,9 @@ describe("FortunaVestingProtocol", function () {
       await expect(protocol.connect(owner).setTokenFeeBps(25))
         .to.emit(protocol, "FeeUpdated")
         .withArgs(123, 25);
+      await expect(protocol.connect(owner).setFortunaFeeConfig(await protocol.getAddress(), 50, 1000))
+        .to.emit(protocol, "FortunaFeeConfigUpdated")
+        .withArgs(await protocol.getAddress(), 50, 1000);
       await expect(protocol.connect(owner).setTreasuryWallet(other.address))
         .to.emit(protocol, "TreasuryUpdated")
         .withArgs(other.address);
@@ -153,6 +194,9 @@ describe("FortunaVestingProtocol", function () {
       expect(await protocol.feeExempt(creator.address)).to.equal(false);
       expect(await protocol.flatFeeNative()).to.equal(123);
       expect(await protocol.tokenFeeBps()).to.equal(25);
+      expect(await protocol.fortunaFeeToken()).to.equal(await protocol.getAddress());
+      expect(await protocol.flatFeeFortuna()).to.equal(50);
+      expect(await protocol.fortunaFeeDiscountBps()).to.equal(1000);
       expect(await protocol.owner()).to.equal(owner.address);
       expect(treasury.address).to.not.equal(other.address);
     });
@@ -365,7 +409,7 @@ describe("FortunaVestingProtocol", function () {
       expect(schedule1.beneficiary).to.equal(beneficiary.address);
       expect(schedule1.totalAllocation).to.equal(amount1 - tokenFee1);
       expect(schedule1.title).to.equal("Team");
-      expect(schedule1.category).to.equal("TEAM");
+      expect(schedule1.category).to.equal(ethers.encodeBytes32String("TEAM"));
 
       const creatorIds = await protocol.getSchedulesByCreator(creator.address);
       const beneficiaryIds = await protocol.getSchedulesByBeneficiary(beneficiary.address);
@@ -377,6 +421,8 @@ describe("FortunaVestingProtocol", function () {
       );
       expect(await token.balanceOf(treasury.address)).to.equal(treasuryTokenBefore + tokenFee1 + tokenFee2);
       expect(await ethers.provider.getBalance(await protocol.getAddress())).to.equal(0);
+      expect(await protocol.totalTokensDeposited()).to.equal((amount1 - tokenFee1) + (amount2 - tokenFee2));
+      expect(await protocol.totalOutstandingAllocation()).to.equal((amount1 - tokenFee1) + (amount2 - tokenFee2));
     });
 
     it("supports fee-exempt creators and refunds native value", async function () {
@@ -405,6 +451,100 @@ describe("FortunaVestingProtocol", function () {
       expect(await ethers.provider.getBalance(treasury.address)).to.equal(treasuryNativeBefore);
       expect(await token.balanceOf(treasury.address)).to.equal(treasuryTokenBefore);
       expect(await protocol.totalFeesCollectedNative()).to.equal(totalFeesNativeBefore);
+    });
+
+    it("supports paying platform fees in fortuna token with configurable discount", async function () {
+      const ctx = await loadFixture(deployFixture);
+      const { owner, creator, beneficiary, treasury, token, protocol, tokenFeeBps } = ctx;
+      const amount = ethers.parseEther("100");
+      const fortunaFlatFee = ethers.parseEther("10");
+      const discountBps = 2500;
+      const discountedFortunaFee = (fortunaFlatFee * BigInt(10000 - discountBps)) / 10000n;
+      const vestingTokenFee = (amount * tokenFeeBps) / 10000n;
+
+      await protocol.connect(owner).setFortunaFeeConfig(await token.getAddress(), fortunaFlatFee, discountBps);
+      expect(await protocol.discountedFortunaFee()).to.equal(discountedFortunaFee);
+
+      const treasuryTokenBefore = await token.balanceOf(treasury.address);
+      const scheduleId = await createSchedule(ctx, {
+        creator,
+        beneficiary,
+        amount,
+        cliffDuration: 1,
+        vestingDuration: 100,
+        releaseInterval: 0,
+        tgePercent: 0,
+        payFeeInFortuna: true,
+        approveAmount: amount + discountedFortunaFee,
+      });
+
+      expect(await protocol.totalFeesCollectedFortuna()).to.equal(discountedFortunaFee);
+      expect(await protocol.totalFeesCollectedNative()).to.equal(0);
+      expect(await protocol.totalFeesCollectedTokens(await token.getAddress())).to.equal(vestingTokenFee);
+      expect(await token.balanceOf(treasury.address)).to.equal(
+        treasuryTokenBefore + discountedFortunaFee + vestingTokenFee
+      );
+
+      const schedule = await protocol.getSchedule(scheduleId);
+      expect(schedule.totalAllocation).to.equal(amount - vestingTokenFee);
+    });
+
+    it("rejects native value when fortuna-fee path is used", async function () {
+      const ctx = await loadFixture(deployFixture);
+      const { owner, creator, beneficiary, token, protocol } = ctx;
+      const amount = ethers.parseEther("10");
+      const fortunaFlatFee = ethers.parseEther("1");
+
+      await protocol.connect(owner).setFortunaFeeConfig(await token.getAddress(), fortunaFlatFee, 0);
+      await token.connect(creator).approve(await protocol.getAddress(), amount + fortunaFlatFee);
+
+      await expect(
+        protocol.connect(creator).createScheduleWithFortunaFee(
+          await token.getAddress(),
+          beneficiary.address,
+          amount,
+          0,
+          1,
+          100,
+          0,
+          0,
+          true,
+          "A",
+          "B",
+          { value: 1 }
+        )
+      ).to.be.revertedWith("Fortuna: native not accepted");
+    });
+
+    it("accounts safely for fee-on-transfer vesting tokens", async function () {
+      const { creator, beneficiary, feeToken, protocol } = await loadFixture(deployFeeOnTransferFixture);
+      const amount = ethers.parseEther("100");
+      const expectedReceived = ethers.parseEther("90");
+
+      await feeToken.connect(creator).approve(await protocol.getAddress(), amount);
+      await protocol.connect(creator).createSchedule(
+        await feeToken.getAddress(),
+        beneficiary.address,
+        amount,
+        0,
+        0,
+        2,
+        0,
+        0,
+        true,
+        "FoT",
+        "FOT",
+        { value: 0 }
+      );
+
+      const scheduleId = (await protocol.getSchedulesByCreator(creator.address))[0];
+      const schedule = await protocol.getSchedule(scheduleId);
+      expect(schedule.totalAllocation).to.equal(expectedReceived);
+
+      await time.increase(3);
+      await protocol.connect(beneficiary).claim(scheduleId);
+      expect(await protocol.claimedAmount(scheduleId)).to.equal(expectedReceived);
+      expect(await feeToken.balanceOf(beneficiary.address)).to.equal(ethers.parseEther("81"));
     });
   });
 
@@ -455,9 +595,20 @@ describe("FortunaVestingProtocol", function () {
       expect(await protocol.claimedAmount(scheduleId)).to.equal(amount);
       expect(await protocol.claimableAmount(scheduleId)).to.equal(0);
       expect(await protocol.totalTokensClaimed()).to.equal(amount);
+      expect(await protocol.totalOutstandingAllocation()).to.equal(0);
 
       const creatorIds = await protocol.getSchedulesByCreator(creator.address);
       expect(creatorIds[0]).to.equal(scheduleId);
+    });
+
+    it("validates schedule existence for direct lookups and claims", async function () {
+      const { beneficiary, protocol } = await loadFixture(deployFixture);
+
+      await expect(protocol.claimableAmount(999999)).to.be.revertedWith("Fortuna: invalid schedule");
+      await expect(protocol.lockedAmount(999999)).to.be.revertedWith("Fortuna: invalid schedule");
+      await expect(protocol.claimedAmount(999999)).to.be.revertedWith("Fortuna: invalid schedule");
+      await expect(protocol.getSchedule(999999)).to.be.revertedWith("Fortuna: invalid schedule");
+      await expect(protocol.connect(beneficiary).claim(999999)).to.be.revertedWith("Fortuna: invalid schedule");
     });
 
     it("supports claimAll across multiple schedules", async function () {
@@ -576,6 +727,8 @@ describe("FortunaVestingProtocol", function () {
       await expect(protocol.connect(beneficiary).claim(scheduleId)).to.be.revertedWith(
         "Fortuna: nothing to claim"
       );
+      expect(await protocol.totalTokensRevoked()).to.equal(ethers.parseEther("60"));
+      expect(await protocol.totalOutstandingAllocation()).to.equal(0);
     });
 
     it("enforces revoke permission and state constraints", async function () {
@@ -618,7 +771,7 @@ describe("FortunaVestingProtocol", function () {
   });
 
   describe("pause behavior", function () {
-    it("blocks createSchedule and claims while paused", async function () {
+    it("blocks createSchedule while paused but allows claims", async function () {
       const ctx = await loadFixture(deployFixture);
       const { owner, creator, beneficiary, token, protocol, flatFeeNative } = ctx;
       const amount = ethers.parseEther("30");
@@ -652,14 +805,59 @@ describe("FortunaVestingProtocol", function () {
       });
 
       await protocol.connect(owner).pause();
-      await expect(protocol.connect(beneficiary).claim(scheduleId)).to.be.revertedWithCustomError(
-        protocol,
-        "EnforcedPause"
-      );
-      await expect(protocol.connect(beneficiary).claimAll()).to.be.revertedWithCustomError(
-        protocol,
-        "EnforcedPause"
-      );
+      await time.increase(120);
+      await expect(protocol.connect(beneficiary).claim(scheduleId)).to.not.be.reverted;
+      await expect(protocol.connect(beneficiary).claimAll()).to.not.be.reverted;
+    });
+
+    it("allows revoke while paused", async function () {
+      const ctx = await loadFixture(deployFixture);
+      const { owner, creator, protocol } = ctx;
+
+      await protocol.connect(owner).setFlatFee(0);
+      await protocol.connect(owner).setTokenFeeBps(0);
+      const scheduleId = await createSchedule(ctx, {
+        amount: ethers.parseEther("20"),
+        cliffDuration: 1,
+        vestingDuration: 100,
+        releaseInterval: 0,
+        revocable: true,
+        value: 0,
+      });
+
+      await protocol.connect(owner).pause();
+      await expect(protocol.connect(creator).revokeSchedule(scheduleId)).to.not.be.reverted;
+    });
+  });
+
+  describe("rescue", function () {
+    it("allows rescuing only excess token balance", async function () {
+      const ctx = await loadFixture(deployFixture);
+      const { owner, beneficiary, token, protocol } = ctx;
+      const amount = ethers.parseEther("20");
+
+      await protocol.connect(owner).setFlatFee(0);
+      await protocol.connect(owner).setTokenFeeBps(0);
+      await createSchedule(ctx, {
+        amount,
+        beneficiary,
+        cliffDuration: 1,
+        vestingDuration: 100,
+        releaseInterval: 0,
+        value: 0,
+      });
+
+      await expect(
+        protocol.connect(owner).rescueToken(await token.getAddress(), owner.address, 1)
+      ).to.be.revertedWith("Fortuna: no excess");
+
+      const accidental = ethers.parseEther("5");
+      await token.connect(owner).transfer(await protocol.getAddress(), accidental);
+      await expect(
+        protocol.connect(owner).rescueToken(await token.getAddress(), owner.address, accidental)
+      )
+        .to.emit(protocol, "TokenRescued")
+        .withArgs(await token.getAddress(), owner.address, accidental);
     });
   });
 });

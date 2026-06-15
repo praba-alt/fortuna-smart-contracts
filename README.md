@@ -64,6 +64,9 @@ Optional:
 - `TREASURY_WALLET`
 - `FLAT_FEE_NATIVE`
 - `TOKEN_FEE_BPS`
+- `FORTUNA_FEE_TOKEN` (optional token address used for platform-fee-in-FORT mode)
+- `FLAT_FEE_FORTUNA` (optional flat fee amount in FORT units)
+- `FORTUNA_FEE_DISCOUNT_BPS` (optional discount in bps when paying fee in FORT)
 - `TOKEN_RECIPIENT`
 - `TOKEN_INITIAL_OWNER`
 
@@ -120,6 +123,28 @@ npm run deploy:token -- --network baseSepolia
 npm run deploy:vesting -- --network baseSepolia
 ```
 
+### Base Sepolia quick smoke tests
+```bash
+npm run smoke:token:base-sepolia
+npm run smoke:vesting:base-sepolia
+npm run deploy:smoke:base-sepolia
+```
+
+Optional env overrides for smoke scripts:
+- `SMOKE_TOKEN_ADDRESS` (attach existing FortunaToken instead of deploying)
+- `SMOKE_TOKEN_RECIPIENT`, `SMOKE_TOKEN_INITIAL_OWNER` (used only when smoke script deploys token)
+- `SMOKE_VESTING_ADDRESS` (attach existing FortunaVestingProtocol instead of deploying)
+- `SMOKE_BENEFICIARY` (if omitted, deployer is used)
+- `SMOKE_TREASURY_WALLET` (used only when smoke script deploys vesting protocol)
+- `SMOKE_VESTING_AMOUNT` (default `1`, in whole-token ETH units)
+- `SMOKE_FLAT_FEE_NATIVE`, `SMOKE_TOKEN_FEE_BPS`
+- `SMOKE_PAY_FEE_IN_FORTUNA` (`true` to use `createScheduleWithFortunaFee`)
+- `SMOKE_FLAT_FEE_FORTUNA`, `SMOKE_FORTUNA_FEE_DISCOUNT_BPS`
+- `SMOKE_CLIFF_SECONDS`, `SMOKE_VESTING_SECONDS`, `SMOKE_RELEASE_INTERVAL_SECONDS`, `SMOKE_TGE_BPS`
+
+Behavior note:
+- In combined deploy flows (`deploy:smoke:*` and `smoke:vesting:*` when vesting is newly deployed), the script sets `fortunaFeeToken` to the token deployed/used in that same run.
+
 ### Base Mainnet
 ```bash
 npm run deploy:token -- --network base
@@ -159,5 +184,9 @@ Required `.env` for verify:
 - `npm run local:test`
 - `npm run deploy:token -- --network <baseSepolia|base>`
 - `npm run deploy:vesting -- --network <baseSepolia|base>`
+- `npm run smoke:token:base-sepolia`
+- `npm run smoke:vesting:base-sepolia`
+- `npm run deploy:smoke:local`
+- `npm run deploy:smoke:base-sepolia`
 - `npm run verify:token -- --network <baseSepolia|base> --address <ADDRESS>`
 - `npm run verify:vesting -- --network <baseSepolia|base> --address <ADDRESS>`
